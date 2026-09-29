@@ -31,6 +31,13 @@ The desktop is served at <http://localhost:8443>. It connects with no login
 prompt, because the VNC server runs with basic auth disabled; the container is
 reachable only from the host.
 
+**One container per workspace.** The container is named `ros2-workstation`, so
+two workspaces on one machine would otherwise fight over it -- and the loser
+would silently get the other workspace's sources mounted under its own paths.
+`start` compares what an existing container has mounted and refuses rather than
+adopting it. To run a second workspace alongside the first, set
+`TARI_CONTAINER_NAME` to something else.
+
 `build` tags the existing image as `ros2-iron-jammy:rollback` before
 overwriting `:latest`. Docker only moves a tag on success, but a *successful*
 build of a subtly different image is the case worth being able to undo.

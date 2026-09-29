@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-CONTAINER_NAME="ros2-workstation"
+# One container per workspace. The name is shared by default so that the usual
+# commands and procedures keep working; set TARI_CONTAINER_NAME to run a second
+# workspace alongside the first.
+CONTAINER_NAME="${TARI_CONTAINER_NAME:-ros2-workstation}"
 IMAGE_NAME="ros2-iron-jammy:latest"
 BASE_IMAGE="cloud-workstations/kasm-cloud-workstation:latest"
 
@@ -49,9 +52,25 @@ case "$COMMAND" in
         docker build -t "${BASE_IMAGE}" "${HERE}/images/kasm-base"
         echo "Building ${IMAGE_NAME} ..."
         docker build -t "${IMAGE_NAME}" "${HERE}/images/ros2-iron-jammy"
-        echo "Done. Run '\''$0 start'\'' to create the container."
+        echo "Done. Run \"$0 start\" to create the container."
         ;;
     start)
+        # A container of this name may belong to a DIFFERENT workspace. Adopting
+        # it would silently give you that workspace's sources under this one's
+        # path, so compare what it actually has mounted and refuse instead.
+        if [ "$(docker ps -aq -f name=^/${CONTAINER_NAME}$)" ]; then
+            existing_ws="$(docker inspect "${CONTAINER_NAME}" \
+                --format '{{range .Mounts}}{{if eq .Destination "/home/user/ros_ws"}}{{.Source}}{{end}}{{end}}' \
+                2>/dev/null)"
+            if [ -n "${existing_ws}" ] && [ "${existing_ws}" != "${WS_DIR}" ]; then
+                echo "Container ${CONTAINER_NAME} already exists and belongs to another workspace:" >&2
+                echo "    its ros_ws:   ${existing_ws}" >&2
+                echo "    this ros_ws:  ${WS_DIR}" >&2
+                echo "Use that workspace, or set TARI_CONTAINER_NAME to a different name." >&2
+                exit 1
+            fi
+        fi
+
         # Check if container exists
         if [ "$(docker ps -aq -f name=^/${CONTAINER_NAME}$)" ]; then
             if [ "$(docker ps -q -f name=^/${CONTAINER_NAME}$)" ]; then
