@@ -7,6 +7,15 @@ USER root
 # ---------------------------------------------------------------------------
 # Robotics Layer: ROS2 iron & Gazebo
 # ---------------------------------------------------------------------------
+# The ROS package list below overlaps what `rosdep install --from-paths src` would
+# work out from ros_ws/src. That is deliberate: installing it here puts it in one
+# cached image layer, so a source change does not reinstall several gigabytes of
+# apt. It is not the authority on what is required, though. The runtime plugins
+# in it (ros-iron-pick-ik, ros-iron-pose-broadcaster, the ros2_control
+# controllers, the MoveIt planners) are named as strings in configs, and each is
+# declared as an exec_depend by the package that ships the config naming it,
+# which is what makes them arrive on a machine not built from this image.
+# tari_bringup/test/test_plugin_dependencies.py checks those declarations.
 RUN apt-get update && apt-get install -y software-properties-common curl && \
     add-apt-repository universe && \
     curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
@@ -249,6 +258,35 @@ RUN apt-get update && apt-get install -y \
     python3-matplotlib python3-pyopencl \
     python3-collada python3-networkx python3-pint python3-progress python3-transforms3d \
     && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Install policy: system-wide, never editable, never --user.
+#
+# Every pip install in this file, here and below, is deliberately a plain
+# system-wide install. Do not "fix" one into --user or -e.
+#
+# The workspace rule is that a Python package is installed with
+#
+#     sudo pip install --no-deps --no-build-isolation .
+#
+# and nothing else. An image build is already root and has no reason to call
+# sudo, so the privilege half of that is satisfied by construction: pip3 here is
+# the image's only python3 and writes to /usr/local/lib/python3.10/dist-packages,
+# which every user and every service in the container reads. What must still
+# hold is the rest of the rule -- never editable, and never into a per-user tree.
+# A per-user install would be worse than useless here: ~/.local is a mount from
+# the host, so it would not be part of the image at all, and it precedes the
+# system directories on sys.path, which makes it shadow what the image provides.
+#
+# --no-deps is NOT used for the third-party packages below. These are ordinary
+# dependencies being resolved on purpose; the flag belongs on installs of our own
+# source, where pip must not substitute a version nobody chose.
+#
+# No dataguzzler package is installed at image build time. spatialnde2,
+# dataguzzler-python and the dgpython-* modules are built from the mounted
+# sources by dgpy_install.sh inside the running container, because they are
+# developed here and the image must not pin a commit.
+# ---------------------------------------------------------------------------
 RUN pip3 install pyquaternion trimesh zstandard
 
 # Ubuntu 22.04 ships setuptools_scm 6.4.2, which predates the "version_file" option.
@@ -257,6 +295,28 @@ RUN pip3 install pyquaternion trimesh zstandard
 #   TypeError: Configuration.__init__() got an unexpected keyword argument 'version_file'
 # unless a newer setuptools_scm shadows the distro package.
 RUN pip3 install -U "setuptools_scm[toml]>=8"
+
+# SWIG 4.1 or newer, for spatialnde2's Python directors.
+#
+# Ubuntu 22.04 ships SWIG 4.0.2, and spatialnde2 switches directors off below
+# 4.1.0 (snde/recstore_transaction_manager.i) because 4.0.x writes the names of
+# two-character C++ operators into the generated director class with the
+# characters separated -- "operator  =  = " for operator== -- which does not
+# compile. The consequence on a 4.0.2 build is that measurement_clock and
+# measurement_time cannot be subclassed from Python, so a piece of hardware's own
+# clock cannot be used as the measurement clock of a timed_transaction_manager,
+# and spatialnde2's test/measurement_clock_python.py skips.
+#
+# SWIG is a build-time tool: it emits a .cxx file and leaves nothing behind in
+# the installed library, so a newer one changes no runtime behaviour. The wheel
+# below carries a self-contained binary at /usr/local/bin/swig.
+#
+# The distribution's swig4.0 is deliberately left installed. CMake's FindSWIG
+# looks for the versioned names first (swig4.0 before swig), so /usr/bin/swig4.0
+# would still win on PATH order alone -- which is why SWIG_EXECUTABLE has to be
+# passed to cmake explicitly. dgpy_install.sh does that; a build by hand needs
+# -DSWIG_EXECUTABLE=/usr/local/bin/swig.
+RUN pip3 install "swig>=4.1,<4.6" && /usr/local/bin/swig -version
 
 # ---------------------------------------------------------------------------
 # Intel GPU OpenCL runtime

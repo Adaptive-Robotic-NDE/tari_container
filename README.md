@@ -60,8 +60,24 @@ Directories that do not exist yet are created. A repository that has not been
 cloned yet mounts as an empty directory rather than failing, so a partial
 workspace still starts.
 
-`container_local` is why editable installs survive a recreate: it is the
-container's `~/.local`, kept on the host.
+`container_local` is the container's `~/.local`, kept on the host so that
+anything written there survives a recreate.
+
+**Nothing in this workspace is an editable install, and nothing belongs in
+`~/.local`.** Every Python package is installed with
+
+    sudo pip install --no-deps --no-build-isolation .
+
+which puts it in the image's system directories, for every user and every
+service. `~/.local` precedes those on `sys.path`, so a per-user copy left there
+shadows the deliberate install and becomes what actually runs. A copy of a
+dataguzzler package under `container_local/` is therefore a fault to clear, not
+a convenience: `pip uninstall <name>`, then reinstall system-wide.
+`dgpy_install.sh --check` reports any it finds as `USER-SITE`.
+
+Editing a source file changes nothing until the package is reinstalled. That is
+the point — what runs is what was installed, not whatever a working tree happens
+to contain.
 
 **`restart` is remove plus create.** Everything above survives it because it is
 a mount; anything written elsewhere inside the container does not.
