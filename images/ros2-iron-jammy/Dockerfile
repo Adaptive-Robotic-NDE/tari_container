@@ -289,6 +289,27 @@ RUN apt-get update && apt-get install -y \
 # ---------------------------------------------------------------------------
 RUN pip3 install pyquaternion trimesh zstandard
 
+# TOPP-RA, for tari_toppra's primary time-parameterization backend.
+#
+# PINNED, AND THE PIN IS LOAD-BEARING. 0.6.1 through 0.6.3 carry an open issue
+# (#244) where the solver fails on feasible problems at particular gridpoint
+# counts, which on a scan row is indistinguishable from the TOTG conditioning
+# failure the package exists to avoid. toppra exposes no __version__, so
+# tari_toppra reads the version from package metadata and warns on a mismatch.
+#
+# Not declared in tari_toppra/package.xml: there is no rosdep key for it, and
+# backend_toppra imports it lazily so the package builds, installs and runs its
+# whole host suite without it -- which is deliberate, because the trapezoid
+# backend is the fallback and has to work with no toppra at all. It is here so
+# that a container recreate does not silently take the primary backend away;
+# before this line it was a `sudo pip install` into a live container and was
+# lost on every recreate.
+#
+# cp310 only matters inside this image. There is no cp314 wheel, so toppra
+# cannot be installed on the Arch host at all, and the host runs the trapezoid
+# half of the suite.
+RUN pip3 install "toppra==0.6.10"
+
 # Ubuntu 22.04 ships setuptools_scm 6.4.2, which predates the "version_file" option.
 # spatialnde2's build writes that option into the generated pyproject.toml
 # (python/pyproject_assign_git_root.py), so the pip install step fails with
