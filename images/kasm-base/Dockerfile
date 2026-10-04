@@ -148,6 +148,13 @@ RUN chmod +x /entrypoint.sh
 COPY kasm-init.service /etc/systemd/system/kasm-init.service
 RUN systemctl enable kasm-init.service ssh.service
 
+# /tmp/.X11-unix is bind-mounted from the host. The stock systemd rule
+# (/usr/lib/tmpfiles.d/x11.conf: "D! /tmp/.X11-unix ...") empties that
+# directory at every boot, which deletes the HOST's X server sockets (X0, X1)
+# and breaks ssh -X forwarding and other path-based X clients on the host.
+# Override it with a rule that only creates the directory and never cleans it.
+RUN printf 'd /tmp/.X11-unix 1777 root root -\n' > /etc/tmpfiles.d/x11.conf
+
 EXPOSE 8443
 EXPOSE 22
 
