@@ -310,6 +310,27 @@ RUN pip3 install pyquaternion trimesh zstandard
 # half of the suite.
 RUN pip3 install "toppra==0.6.10"
 
+# h5py, for the simulated eddy-current instrument's response table.
+#
+# The table is a single HDF5 file generated elsewhere (ROS-Scanning
+# tools/generate_ec_table.py against the ecsim package, which is NOT installed
+# here and is not meant to be -- it is a night's compute on a workstation). All
+# this container does is READ the file: ROS-Scanning's ec_response_table.py
+# needs h5py and numpy and nothing else, which is why the heavy simulator stays
+# outside the image.
+#
+# The distro package, not pip: libhdf5-dev is already installed above for
+# spatialnde2, and Ubuntu's python3-h5py is built against that same libhdf5, so
+# the two cannot end up on different HDF5 versions in one process. A pip wheel
+# would bring its own bundled libhdf5 and sit alongside.
+#
+# Without it, EC_SOURCE=sim still works -- sim_ec_source.dpi falls back to its
+# synthetic signal and says so -- so this is not a hard dependency of the scan.
+# It is here so that a container recreate does not quietly take the physics
+# away and leave the invented bumps behind.
+RUN apt-get update && apt-get install -y python3-h5py \
+    && rm -rf /var/lib/apt/lists/*
+
 # Ubuntu 22.04 ships setuptools_scm 6.4.2, which predates the "version_file" option.
 # spatialnde2's build writes that option into the generated pyproject.toml
 # (python/pyproject_assign_git_root.py), so the pip install step fails with
