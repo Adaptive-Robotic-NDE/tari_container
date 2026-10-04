@@ -118,7 +118,30 @@ if [ -d /docker-entrypoint.d ]; then
   done
 fi
 
-# 8. Start KasmVNC 
+# 8. Start KasmVNC
+
+# OUR OWN STALE SOCKET, AND ONLY OURS. /tmp/.X11-unix is bind-mounted from the
+# host, so the socket a previous container's Xvnc left behind outlives the
+# container -- and vncserver then refuses the display ("arch-test:10 is taken
+# because of /tmp/.X11-unix/X10"), exits 2, and `set -e` at the top of this
+# file kills the whole entrypoint. kasm-init.service fails, there is no X
+# server, and what you get is a cell that looks half-alive: gzserver runs and
+# /profiles publishes, while gzclient and rviz2 die with exit -6 and the
+# simulated Azure publishes nothing, because libgazebo_ros_camera renders
+# through OGRE and OGRE needs X. Nothing in that points here.
+#
+# This used to be hidden. The stock tmpfiles rule for the directory was "D!",
+# which EMPTIES it at every boot, so the stale socket was always swept up --
+# along with the host's own X0 and X1, which is the bug the /etc/tmpfiles.d
+# override in the base image fixes. Fixing that exposed this.
+#
+# Scoped to :10, which is this container's display and nobody else's. Never a
+# wildcard: X0 and X1 in here are the HOST's sessions, reached through the bind
+# mount, and removing those is exactly what we stopped doing. This entrypoint
+# runs once per container creation, when no Xvnc of ours can yet be alive, so
+# an existing X10 is stale by construction.
+rm -f /tmp/.X11-unix/X10 /tmp/.X10-lock
+
 echo "Starting KasmVNC Server..."
 su - user -c "vncserver :10 -select-de xfce -port 8443 -disableBasicAuth"
 

@@ -119,6 +119,23 @@ case "$COMMAND" in
             # the host. Without it, EC_TABLE cannot name the table from where it
             # lives and ec_real_table_test.py skips every case in here.
             #
+            # AT /opt, NOT UNDER /home/user, AND THAT IS NOT A STYLE CHOICE.
+            # entrypoint.sh is `set -e` and runs `chown -R user:user /home/user`
+            # before it starts anything. A read-only mount anywhere under that
+            # path makes the chown fail, which aborts the entrypoint, which
+            # fails kasm-init.service -- so the X server on :10 never starts.
+            # What you then see is a cell that looks half-alive: gzserver runs,
+            # the controllers execute, /profiles publishes (the simulated
+            # Keyence is a CPU raycaster and needs no rendering), and gzclient
+            # and rviz2 are dead with exit -6 while the Azure publishes nothing
+            # at all, because libgazebo_ros_camera renders through OGRE and OGRE
+            # needs X. Nothing in any of that points at a mount. Measured
+            # 2026-10-04, by doing exactly this.
+            #
+            # TARI_TEST_DATA is passed in the environment rather than left to
+            # test_data.py's walk-up search, which looks for a directory NAMED
+            # test_data above the test file and would not find /opt/test_data.
+            #
             # Do not comment inside the docker run below: every line ends in a
             # backslash, so the whole block is ONE logical line and a '#'
             # anywhere in it comments out every argument that follows.
@@ -146,7 +163,8 @@ case "$COMMAND" in
                 -v "${WORKSPACE}/spatialnde2-ec-functions:/home/user/software_ws/spatialnde2-ec-functions" \
                 -v "${WORKSPACE}/software_ws/SOFA:/home/user/software_ws/SOFA" \
                 -v "${WORKSPACE}/scandata:/home/user/scandata" \
-                -v "${WORKSPACE}/test_data:/home/user/test_data:ro" \
+                -v "${WORKSPACE}/test_data:/opt/test_data:ro" \
+                -e TARI_TEST_DATA=/opt/test_data \
                 -v "${CONTAINER_LOCAL}:/home/user/.local" \
                 -v "$HOME/.ssh:/home/user/.ssh" \
                 -v /tmp/.X11-unix:/tmp/.X11-unix \
