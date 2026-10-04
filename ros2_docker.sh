@@ -83,6 +83,11 @@ case "$COMMAND" in
             echo "Creating and starting new container ${CONTAINER_NAME}..."
             # Ensure the local workspace directories exist
             mkdir -p "${WS_DIR}" "${SOFTWARE_WS}" "${CONTAINER_LOCAL}" "${WORKSPACE}/scandata"
+            # A bind-mount source that does not exist is created by docker as a
+            # root-owned directory, which then shadows a later checkout and is
+            # not writable to remove. test_data is a separate repository and may
+            # legitimately be absent, so make it rather than mount a surprise.
+            mkdir -p "${WORKSPACE}/test_data"
 
             # --shm-size: docker defaults /dev/shm to 64 MB, and both spatialnde2
             # recordings and the FastDDS shared memory transport live there. A
@@ -105,6 +110,14 @@ case "$COMMAND" in
             # list, reconstructed mesh and generated X3D is written there. It
             # was NOT a mount, and `restart` is rm + start, so a container
             # recreate destroyed an afternoon of scans silently. Mounted now.
+            #
+            # test_data is the fixture repository (test_data_staging): recorded
+            # scan datasets the host test suites open, and the generated
+            # eddy-current response table that the SIMULATED instrument reads at
+            # run time. Mounted READ-ONLY -- nothing in the container should
+            # write a fixture, and the git-lfs fetch that populates it happens on
+            # the host. Without it, EC_TABLE cannot name the table from where it
+            # lives and ec_real_table_test.py skips every case in here.
             #
             # Do not comment inside the docker run below: every line ends in a
             # backslash, so the whole block is ONE logical line and a '#'
@@ -133,6 +146,7 @@ case "$COMMAND" in
                 -v "${WORKSPACE}/spatialnde2-ec-functions:/home/user/software_ws/spatialnde2-ec-functions" \
                 -v "${WORKSPACE}/software_ws/SOFA:/home/user/software_ws/SOFA" \
                 -v "${WORKSPACE}/scandata:/home/user/scandata" \
+                -v "${WORKSPACE}/test_data:/home/user/test_data:ro" \
                 -v "${CONTAINER_LOCAL}:/home/user/.local" \
                 -v "$HOME/.ssh:/home/user/.ssh" \
                 -v /tmp/.X11-unix:/tmp/.X11-unix \
