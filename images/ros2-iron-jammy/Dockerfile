@@ -282,10 +282,10 @@ RUN apt-get update && apt-get install -y \
 # dependencies being resolved on purpose; the flag belongs on installs of our own
 # source, where pip must not substitute a version nobody chose.
 #
-# No dataguzzler package is installed at image build time. spatialnde2,
-# dataguzzler-python and the dgpython-* modules are built from the mounted
-# sources by dgpy_install.sh inside the running container, because they are
-# developed here and the image must not pin a commit.
+# The dataguzzler packages themselves are NOT here. They are installed in the
+# last layer of this file, by dgpy_install.sh -- see the block at the end for
+# why they go in the image at all and why they go last. What this section
+# installs is what their builds need.
 # ---------------------------------------------------------------------------
 RUN pip3 install pyquaternion trimesh zstandard
 
@@ -498,3 +498,72 @@ RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
 # path from the `ros2 launch` process, which is Python and does. A *headless*
 # build has no business shipping a platform plugin at all, so remove it.
 RUN rm -rf /usr/local/lib/python3.10/dist-packages/cv2/qt
+# ---------------------------------------------------------------------------
+# THE DATAGUZZLER PACKAGES. LAST IN THE FILE, DELIBERATELY.
+#
+# spatialnde2, dataguzzler-python, the dgpython-* modules and the Cython extras,
+# installed system-wide by the workspace's own installer:
+#
+#     sudo python3 -m pip install --no-deps --no-build-isolation .
+#
+# dgpy_install.sh runs exactly that for every package, in dependency order, and
+# already knows it may be running as root in an image build (it drops the sudo
+# when EUID is 0) and that spatialnde2-ec-functions needs
+# SETUPTOOLS_USE_DISTUTILS=stdlib to build against a modern setuptools. Nothing
+# about the policy is restated here; this layer only calls it.
+#
+# WHY THIS HAS TO BE IN THE IMAGE AT ALL. A system install lands in
+# /usr/local/lib/python3.10/dist-packages, which is INSIDE the container, and
+# `ros2_docker.sh restart` is remove-plus-create. Only the mounts survive that.
+# So an install done by hand in a running container is gone at the next restart,
+# and the only copy that persists is one left in ~/.local -- which is the
+# per-user tree the whole policy exists to keep empty, and which silently
+# shadows the system install when somebody does reinstall it. That is not
+# hypothetical: measured 2026-10-04, ~/.local held a spatialnde2 from Sep 15
+# while /usr/local held the current one, `pip show` reported the old version
+# immediately after pip said it had installed the new, and a fix that had been
+# committed for three days had never once executed.
+#
+# WHY IT IS LAST. These are the only things in this file that change daily, and
+# a layer invalidates every layer after it. Last means editing a package rebuilds
+# this layer and nothing else -- not ROS, not torch, not the Intel runtime. The
+# whole image is roughly half an hour; this layer is a couple of minutes.
+#
+# THE COMMIT IN THE IMAGE IS A BASELINE, NOT A PIN. The sources are also
+# bind-mounted at runtime, so what the image carries is whatever was checked out
+# when it was built, and a working tree can be ahead of it. That is what
+# `dgpy_install.sh --check` answers -- it reports the installed version, its
+# location, and whether the install is system, user or editable. Re-running the
+# installer inside a live container updates it until the next recreate; rebuild
+# the image to move the baseline.
+#
+# The context is the WORKSPACE ROOT, not this directory -- see .dockerignore
+# there, which allowlists these sources down to about 23 MB out of 27 GB.
+# ros2_docker.sh passes the right -f and context; building this file by hand
+# from its own directory will fail at the COPY, which is the correct outcome
+# rather than an image quietly missing every dataguzzler package.
+# ---------------------------------------------------------------------------
+COPY dgpy_install.sh /usr/local/src/tari/dgpy_install.sh
+COPY spatialnde2 /usr/local/src/tari/spatialnde2
+COPY dataguzzler-python /usr/local/src/tari/dataguzzler-python
+COPY dgpython-param-manager /usr/local/src/tari/dgpython-param-manager
+COPY dgpython-local /usr/local/src/tari/dgpython-local
+COPY dgpython-azurekinect /usr/local/src/tari/dgpython-azurekinect
+COPY dgpython-nidaqmx /usr/local/src/tari/dgpython-nidaqmx
+COPY dgpython-uniwest /usr/local/src/tari/dgpython-uniwest
+COPY dgpython-opencv-camera /usr/local/src/tari/dgpython-opencv-camera
+COPY spatialnde2-ec-functions /usr/local/src/tari/spatialnde2-ec-functions
+
+#
+# The --check is an assertion, not a report: it fails the build if anything ended
+# up missing, stale, editable, or in a per-user tree. An image that quietly lacks
+# a dataguzzler package is the failure this whole layer exists to prevent, and it
+# would otherwise only surface as an ImportError in a scan.
+#
+# --allow-dirty because a build context legitimately carries uncommitted work.
+# DIRTY means "no installed copy can be KNOWN to match this source", which is
+# true on a developer's machine and false here: this layer copied the tree in and
+# installed from it moments earlier. Without the flag no image could be built
+# while anyone had uncommitted changes in any of nine packages.
+RUN cd /usr/local/src/tari && ./dgpy_install.sh --with-extras && \
+    ./dgpy_install.sh --check --allow-dirty

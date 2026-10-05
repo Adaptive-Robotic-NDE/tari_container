@@ -51,7 +51,14 @@ case "$COMMAND" in
         echo "Building ${BASE_IMAGE} ..."
         docker build -t "${BASE_IMAGE}" "${HERE}/images/kasm-base"
         echo "Building ${IMAGE_NAME} ..."
-        docker build -t "${IMAGE_NAME}" "${HERE}/images/ros2-iron-jammy"
+        # THE CONTEXT IS THE WORKSPACE, NOT THE DOCKERFILE'S DIRECTORY. The last
+        # layer installs the dataguzzler packages, and COPY can only reach inside
+        # the context -- so the context has to be the workspace that holds them.
+        # It is 27 GB; <workspace>/.dockerignore is an allowlist that cuts it to
+        # about 23 MB, and that file is load-bearing rather than tidiness.
+        docker build -t "${IMAGE_NAME}" \
+            -f "${HERE}/images/ros2-iron-jammy/Dockerfile" \
+            "${WORKSPACE}"
         echo "Done. Run \"$0 start\" to create the container."
         ;;
     start)
