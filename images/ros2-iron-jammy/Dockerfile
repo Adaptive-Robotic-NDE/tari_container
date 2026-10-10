@@ -249,8 +249,21 @@ RUN apt-get update && apt-get install -y software-properties-common curl && \
 # ---------------------------------------------------------------------------
 # SpatialNDE2 and Dataguzzler-Python Dependencies
 # ---------------------------------------------------------------------------
+# gdb is in this list for the crashes that only happen inside the container.
+#
+# Twice on 2026-10-10 a node died on the way out and the difference between a
+# guess and a diagnosis was a backtrace: mtc_node segfaulting at SIGINT turned
+# out to be ~Node running from librclcpp's static destructors after Fast-DDS
+# had already gone, which no log says and which two rounds of reading the
+# source had got wrong.
+#
+# Cores from the container land in the HOST's systemd-coredump -- the kernel is
+# shared, so core_pattern is the host's -- and `coredumpctl list` on the host
+# finds them. Reading one needs a debugger with THIS image's libraries, so it
+# has to be in here. Installing it after the fact means an apt-get update
+# against an EOL distro's repositories, in the middle of whatever went wrong.
 RUN apt-get update && apt-get install -y \
-    cmake swig python3 python3-dev cython3 python3-pip python3-numpy \
+    cmake swig gdb python3 python3-dev cython3 python3-pip python3-numpy \
     python3-setuptools python3-wheel python3-tomli-w python3-setuptools-scm \
     libxml2-dev libeigen3-dev libhdf5-dev opencl-headers ocl-icd-opencl-dev \
     opencl-clhpp-headers libpng-dev libopenscenegraph-dev freeglut3-dev \
