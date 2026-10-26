@@ -1,0 +1,11 @@
+[Unit]
+Description=Container Initialization and KasmVNC Startup
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/entrypoint.sh
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
